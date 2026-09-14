@@ -1,4 +1,6 @@
-FROM node:24.21-alpine
+ARG NODE_VERSION=24.20
+
+FROM node:${NODE_VERSION}-alpine
 
 RUN apk --no-cache add \
       g++ \
