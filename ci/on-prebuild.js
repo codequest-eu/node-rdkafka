@@ -1,9 +1,10 @@
-const fs = require('fs');
 const { spawn } = require('child_process');
+const { prebuildName, detectLibc } = require('./prebuild-name');
 
 async function main() {
-  const prebuildFileName = `platform-${process.arch}-ABI-${process.versions.modules}`;
+  const prebuildFileName = prebuildName();
 
+  process.stdout.write(`Detected libc: ${detectLibc()}\n`);
   process.stdout.write(`Preparing "./prebuild/${prebuildFileName}.tar.gz" archive...\n`);
   const tarCmd = spawn('tar', [
     'czvf',

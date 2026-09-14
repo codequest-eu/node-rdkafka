@@ -1,0 +1,18 @@
+ARG NODE_VERSION=24.20
+ARG DEBIAN_VERSION=bookworm
+
+FROM node:${NODE_VERSION}-${DEBIAN_VERSION}
+
+RUN apt-get -y update && \
+    apt-get install --no-install-recommends -y \
+      g++ \
+      gcc \
+      ca-certificates \
+      liblz4-dev \
+      libsasl2-dev \
+      libssl-dev \
+      zlib1g-dev \
+      make \
+      python3 \
+      bash && \
+    rm -rf /var/lib/apt/lists/*
