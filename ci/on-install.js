@@ -1,5 +1,6 @@
 const fs = require('fs');
 const { spawn } = require('child_process');
+const { prebuildName, legacyPrebuildName, detectLibc } = require('./prebuild-name');
 
 async function main() {
   if (fs.existsSync('./build')) {
@@ -7,21 +8,23 @@ async function main() {
     return;
   }
 
-  const prebuildFileName = `platform-${process.arch}-ABI-${process.versions.modules}`;
-  const prebuildFilePath = `./prebuild/${prebuildFileName}.tar.gz`;
+  const libc = detectLibc();
+  const candidates = [prebuildName(libc), legacyPrebuildName()]
+    .filter((name, index, all) => all.indexOf(name) === index);
 
+  const prebuildFileName = candidates.find((name) => fs.existsSync(`./prebuild/${name}.tar.gz`));
 
-  if (fs.existsSync(prebuildFilePath)) {
-    process.stdout.write(`-- Unpacking "${prebuildFilePath}" archive...\n`);
-    const tarCmd = spawn('tar', [
-      'xzvf',
-      `./prebuild/${prebuildFileName}.tar.gz`
-    ]);
-    tarCmd.stdout.pipe(process.stdout);
-    tarCmd.stderr.pipe(process.stderr)
-  } else {
-    throw new Error(`Missing node-rdkafka for arch "${process.arch}" and ABI "${process.versions.modules}". Prebuild bindings first.`);
+  if (!prebuildFileName) {
+    throw new Error(`Missing node-rdkafka for arch "${process.arch}", libc "${libc || 'n/a'}" and ABI "${process.versions.modules}". Looked for: ${candidates.join(', ')}. Prebuild bindings first.`);
   }
+
+  process.stdout.write(`-- Unpacking "./prebuild/${prebuildFileName}.tar.gz" archive...\n`);
+  const tarCmd = spawn('tar', [
+    'xzvf',
+    `./prebuild/${prebuildFileName}.tar.gz`
+  ]);
+  tarCmd.stdout.pipe(process.stdout);
+  tarCmd.stderr.pipe(process.stderr)
 }
 
 main().catch(err => console.error(err));
