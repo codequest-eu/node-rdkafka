@@ -2,9 +2,87 @@ node-rdkafka - Node.js wrapper for Kafka C/C++ library
 ==============================================
 
 --
-This fork goal is to avoid costly build time on each installation and provide
-static version builded for specific environment (defined in `Dockerfile`. Currently is `node:20.10-alpine`).
+This fork's goal is to avoid costly build time on each installation and provide
+prebuilt bindings for specific environments. Archives live in `prebuild/` and are
+unpacked by `ci/on-install.js` instead of compiling on install.
 --
+
+## Prebuilt bindings
+
+An archive is selected by architecture, C library and Node ABI:
+
+```
+prebuild/platform-<arch>-<libc>-ABI-<abi>.tar.gz
+```
+
+`<libc>` is `glibc` (Debian, Ubuntu, most images) or `musl` (Alpine), detected at runtime from
+`process.report.getReport().header.glibcVersionRuntime`. It matters: a binding built on Alpine links
+against that image's `libstdc++`, and loading it on Debian bookworm fails with
+`undefined symbol: ..._M_replace_cold` when the build image ships a newer GCC than the target.
+
+On non-Linux platforms the legacy name `platform-<arch>-ABI-<abi>.tar.gz` is used. Installing on musl
+also falls back to that name, so archives predating the `<libc>` segment keep working.
+
+`<abi>` is `process.versions.modules` — it changes with every Node major (Node 22 is `127`, Node 24 is `137`),
+so each supported Node major needs its own set of archives.
+
+### Rebuilding
+
+Both builder images are pinned to the Node version in `Dockerfile` / `Dockerfile.debian`
+(`ARG NODE_VERSION`). Build one variant at a time, from the repository root.
+
+glibc (Debian bookworm):
+
+```bash
+docker compose build api-debian
+docker compose run --rm --no-deps api-debian bash -lc 'rm -rf build && npm run prebuild'
+```
+
+musl (Alpine):
+
+```bash
+docker compose build api
+docker compose run --rm --no-deps api sh -lc 'rm -rf build && npm run prebuild'
+```
+
+`rm -rf build` is required. `ci/on-prebuild.js` packs `./build` as it finds it, and `ci/on-install.js`
+skips unpacking when `./build` already exists — a directory left over from a previous run produces an
+archive holding a binding for the wrong libc.
+
+Each run produces an archive for the host architecture only. For the other one, build under emulation:
+
+```bash
+DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose build api-debian
+DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose run --rm --no-deps api-debian bash -lc 'rm -rf build && npm run prebuild'
+```
+
+qemu emulation takes considerably longer than a native build; a CI job with a matching runner is preferable.
+
+### Verifying
+
+A full set for one Node major is four archives:
+
+```
+platform-arm64-glibc-ABI-137.tar.gz
+platform-arm64-musl-ABI-137.tar.gz
+platform-x64-glibc-ABI-137.tar.gz
+platform-x64-musl-ABI-137.tar.gz
+```
+
+### Bumping Node
+
+The Node version is a build argument, so no file has to be edited to build against a different one:
+
+```bash
+NODE_VERSION=26.7 docker compose build api-debian
+NODE_VERSION=26.7 docker compose run --rm --no-deps api-debian bash -lc 'rm -rf build && npm run prebuild'
+```
+
+The `ARG NODE_VERSION` defaults in `Dockerfile` and `Dockerfile.debian` only say which version an
+unqualified build uses; update them once the new version becomes the one this fork targets.
+
+A new Node major means a new ABI, so all four archives have to be rebuilt — nothing carries over.
+Keep the archives for the previous ABI until every consumer has moved off it.
 
 Copyright (c) 2016 Blizzard Entertainment.
 
@@ -22,7 +100,7 @@ I am looking for *your* help to make this project even better! If you're interes
 
 The `node-rdkafka` library is a high-performance NodeJS client for [Apache Kafka](http://kafka.apache.org/) that wraps the native  [librdkafka](https://github.com/edenhill/librdkafka) library.  All the complexity of balancing writes across partitions and managing (possibly ever-changing) brokers should be encapsulated in the library.
 
-__This library currently uses `librdkafka` version `2.6.0`.__
+__This library currently uses `librdkafka` version `2.12.0`.__
 
 ## Reference Docs
 
@@ -65,7 +143,7 @@ Using Alpine Linux? Check out the [docs](https://github.com/Blizzard/node-rdkafk
 
 ### Windows
 
-Windows build **is not** compiled from `librdkafka` source but it is rather linked against the appropriate version of [NuGet librdkafka.redist](https://www.nuget.org/packages/librdkafka.redist/) static binary that gets downloaded from `https://globalcdn.nuget.org/packages/librdkafka.redist.2.6.0.nupkg` during installation. This download link can be changed using the environment variable `NODE_RDKAFKA_NUGET_BASE_URL` that defaults to `https://globalcdn.nuget.org/packages/` when it's no set.
+Windows build **is not** compiled from `librdkafka` source but it is rather linked against the appropriate version of [NuGet librdkafka.redist](https://www.nuget.org/packages/librdkafka.redist/) static binary that gets downloaded from `https://globalcdn.nuget.org/packages/librdkafka.redist.2.12.0.nupkg` during installation. This download link can be changed using the environment variable `NODE_RDKAFKA_NUGET_BASE_URL` that defaults to `https://globalcdn.nuget.org/packages/` when it's no set.
 
 Requirements:
  * [node-gyp for Windows](https://github.com/nodejs/node-gyp#on-windows)
@@ -102,7 +180,7 @@ const Kafka = require('node-rdkafka');
 
 ## Configuration
 
-You can pass many configuration options to `librdkafka`.  A full list can be found in `librdkafka`'s [Configuration.md](https://github.com/edenhill/librdkafka/blob/v2.6.0/CONFIGURATION.md)
+You can pass many configuration options to `librdkafka`.  A full list can be found in `librdkafka`'s [Configuration.md](https://github.com/edenhill/librdkafka/blob/v2.12.0/CONFIGURATION.md)
 
 Configuration keys that have the suffix `_cb` are designated as callbacks. Some
 of these keys are informational and you can choose to opt-in (for example, `dr_cb`). Others are callbacks designed to
@@ -137,7 +215,7 @@ You can also get the version of `librdkafka`
 const Kafka = require('node-rdkafka');
 console.log(Kafka.librdkafkaVersion);
 
-// #=> 2.6.0
+// #=> 2.12.0
 ```
 
 ## Sending Messages
@@ -150,7 +228,7 @@ const producer = new Kafka.Producer({
 });
 ```
 
-A `Producer` requires only `metadata.broker.list` (the Kafka brokers) to be created.  The values in this list are separated by commas.  For other configuration options, see the [Configuration.md](https://github.com/edenhill/librdkafka/blob/v2.6.0/CONFIGURATION.md) file described previously.
+A `Producer` requires only `metadata.broker.list` (the Kafka brokers) to be created.  The values in this list are separated by commas.  For other configuration options, see the [Configuration.md](https://github.com/edenhill/librdkafka/blob/v2.12.0/CONFIGURATION.md) file described previously.
 
 The following example illustrates a list with several `librdkafka` options set.
 

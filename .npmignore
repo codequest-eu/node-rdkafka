@@ -4,6 +4,8 @@ deps/*
 !deps/windows-install.*
 .gitmodules
 Dockerfile
+Dockerfile.debian
+docker-compose.yml
 deps/librdkafka/config.h
 # build
 .github

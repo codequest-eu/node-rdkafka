@@ -1,7 +1,21 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      args:
+        NODE_VERSION: ${NODE_VERSION:-24.20}
     command: sh
+    working_dir: /home/node/api
+    user: node
+    volumes:
+      - .:/home/node/api
+  api-debian:
+    build:
+      context: .
+      dockerfile: Dockerfile.debian
+      args:
+        NODE_VERSION: ${NODE_VERSION:-24.20}
+    command: bash
     working_dir: /home/node/api
     user: node
     volumes:
@@ -13,6 +27,7 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+
   kafka:
     image: confluentinc/cp-kafka
     links:
